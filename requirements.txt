@@ -1,15 +1,15 @@
 # PyTorch 2.1.1
---extra-index-url https://download.pytorch.org/whl/cu118
+# --extra-index-url https://download.pytorch.org/whl/cu118
 # torch==2.1.1+cu118
 # torchvision==0.16.1+cu118
-torch==2.0.0+cu118
-torchvision==0.15.1+cu118
-torchaudio==2.0.1+cu118
+# torch==2.0.0+cu118
+# torchvision==0.15.1+cu118
+# torchaudio==2.0.1+cu118
 
 
 # JupyterLab
-jupyterlab==4.1.5
-ipywidgets==8.1.2
+# jupyterlab==4.1.5
+# ipywidgets==8.1.2
 
 
 # Common Libraries
@@ -47,7 +47,7 @@ meshcat==0.3.2
 webdataset==0.2.86
 omegaconf==2.3.0
 pypng==0.20220715.0
-Panda3D==1.10.14
+Panda3D==1.10.15
 simplejson==3.19.2
 bokeh==3.4.0
 roma==1.4.4
