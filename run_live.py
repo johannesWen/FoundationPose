@@ -2,6 +2,9 @@ import pyrealsense2 as rs
 from estimater import *
 from datareader import *
 from FoundationPose.mask import *
+from pathlib import Path
+import os
+import time
 import logging
 logging.basicConfig(level=logging.WARNING)
 
@@ -11,17 +14,20 @@ os.environ["TORCH_CUDA_ARCH_LIST"] = "8.7"
 
 parser = argparse.ArgumentParser()
 code_dir = os.path.dirname(os.path.realpath(__file__))
-parser.add_argument('--mesh_file', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/cup2/mesh/Cup2.obj')
+parser.add_argument('--object_dir', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/cup2')
+parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'Cup2.obj'))
+parser.add_argument('--camera_calibration_file', type=str, default='cam_K.txt')
 parser.add_argument('--est_refine_iter', type=int, default=3)
 parser.add_argument('--track_refine_iter', type=int, default=1)
-parser.add_argument('--debug', type=int, default=1)
+parser.add_argument('--debug', type=int, default=2)
 parser.add_argument('--debug_dir', type=str, default=f'{code_dir}/debug')
 args = parser.parse_args()
 
 set_logging_format()
 set_seed(0)
 
-mesh = trimesh.load(args.mesh_file)
+mesh = trimesh.load(os.path.join(args.object_dir, args.mesh_file))
+mesh_diameter = compute_mesh_diameter(model_pts=mesh.vertices, n_sample=10000)
 
 debug = args.debug
 debug_dir = args.debug_dir
@@ -60,8 +66,8 @@ if not found_rgb:
     print("The demo requires Depth camera with Color sensor")
     exit(0)
 
-config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
-config.enable_stream(rs.stream.color, 640, 480, rs.format.rgb8, 30)
+config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 15)
+config.enable_stream(rs.stream.color, 640, 480, rs.format.rgb8, 15)
 
 # Start streaming
 profile = pipeline.start(config)
@@ -84,16 +90,19 @@ align = rs.align(align_to)
 
 i = 0
 # create_mask()
-cam_K = np.array([[603.751708984375, 0.0, 418.1162109375],
-                   [0.0, 603.494140625, 237.28582763671875],
-                   [0., 0., 1.]])
+# cam_K = np.array([[603.751708984375, 0.0, 418.1162109375],
+#                    [0.0, 603.494140625, 237.28582763671875],
+#                    [0., 0., 1.]])
+cam_K = np.loadtxt(os.path.join(args.object_dir, args.camera_calibration_file)).reshape(3,3)
 Estimating = True
-time.sleep(1)
+time.sleep(2)
 # Streaming loop
 try:
     
     os.makedirs(f'{debug_dir}/ob_in_cam', exist_ok=True)
+    end_time = 0
     while Estimating:
+        start_time = time.time()
         # Get frameset of color and depth
         frames = pipeline.wait_for_frames()
 
@@ -139,7 +148,6 @@ try:
             mask = cv2.resize(mask, (W,H), interpolation=cv2.INTER_NEAREST).astype(bool).astype(np.uint8)
         
             pose = est.register(K=cam_K, rgb=color, depth=depth, ob_mask=mask, iteration=args.est_refine_iter)
-            
             if debug>=3:
                 m = mesh.copy()
                 m.apply_transform(pose)
@@ -152,10 +160,33 @@ try:
         else:
             pose = est.track_one(rgb=color, depth=depth, K=cam_K, iteration=args.track_refine_iter)
 
+        start_score_time = time.time()
+        pose_batch = np.expand_dims(pose, axis=0)
+        scores, _ = scorer.predict(rgb=color, depth=depth, K=cam_K, ob_in_cams=pose_batch,
+                                    mesh=mesh, glctx=glctx, mesh_diameter=mesh_diameter)
+        tracking_score = scores.cpu().item()
+        end_score_time = time.time()
+        # logging.info(f"Score prediction time: {end_score_time-start_score_time} s")
+        logging.info(f"Tracking score: {tracking_score}")
+
+        end_time = time.time()
+        logging.info(f"Inference time: {end_time-start_time} s")
+        logging.info(f"FPS: {1/(end_time-start_time)}")
+        
         if debug>=1:
             center_pose = pose@np.linalg.inv(to_origin)
             vis = draw_posed_3d_box(cam_K, img=color, ob_in_cam=center_pose, bbox=bbox)
             vis = draw_xyz_axis(color, ob_in_cam=center_pose, scale=0.1, K=cam_K, thickness=3, transparency=0, is_input_rgb=True)
+            fps = 1.0 / (end_time - start_time) if end_time - start_time > 0 else 0
+            cv2.putText(vis, f'FPS: {fps:.2f}', (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            inference_time = end_time - start_time
+            cv2.putText(vis, f'Inference time: {inference_time:.3f}s', (10, 25),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+            cv2.putText(vis, f'Tracking score: {tracking_score:.4f}', (10, 40),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            # cv2.putText(vis, f'Score time: {(end_score_time-start_score_time):.4f}', (10, 60),
+            #             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+            
             cv2.imshow('1', vis[...,::-1])
             cv2.waitKey(1)
 
