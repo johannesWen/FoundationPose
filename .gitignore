@@ -1,3 +1,7 @@
+example_data
+eigen-3.4.0
+mask.png
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 .history
