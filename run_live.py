@@ -8,25 +8,28 @@ import time
 import logging
 logging.basicConfig(level=logging.WARNING)
 
+from utils import timing_block
+
 torch.backends.cudnn.enabled = True
 # torch.backends.cudnn.benchmark = True
 os.environ["TORCH_CUDA_ARCH_LIST"] = "8.7"
 
 parser = argparse.ArgumentParser()
 code_dir = os.path.dirname(os.path.realpath(__file__))
-parser.add_argument('--object_dir', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/cup2')
-parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'Cup2.obj'))
+parser.add_argument('--object_dir', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/book')
+parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'book.obj'))
 parser.add_argument('--camera_calibration_file', type=str, default='cam_K.txt')
 parser.add_argument('--est_refine_iter', type=int, default=3)
-parser.add_argument('--track_refine_iter', type=int, default=1)
-parser.add_argument('--debug', type=int, default=2)
+parser.add_argument('--track_refine_iter', type=int, default=2)
+parser.add_argument('--debug', type=int, default=1)
+parser.add_argument('--calc_score', type=bool, default=True)
 parser.add_argument('--debug_dir', type=str, default=f'{code_dir}/debug')
 args = parser.parse_args()
 
 set_logging_format()
 set_seed(0)
 
-mesh = trimesh.load(os.path.join(args.object_dir, args.mesh_file))
+mesh = trimesh.load(os.path.join(args.object_dir, args.mesh_file), skip_materials=False)
 mesh_diameter = compute_mesh_diameter(model_pts=mesh.vertices, n_sample=10000)
 
 debug = args.debug
@@ -42,8 +45,8 @@ est = FoundationPose(model_pts=mesh.vertices, model_normals=mesh.vertex_normals,
 logging.info("estimator initialization done")
 
 #create mask
-create_mask()
-mask = cv2.imread("mask.png")
+# create_mask()
+# mask = cv2.imread("mask.png")
 
 # Create a pipeline
 pipeline = rs.pipeline()
@@ -66,8 +69,8 @@ if not found_rgb:
     print("The demo requires Depth camera with Color sensor")
     exit(0)
 
-config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 15)
-config.enable_stream(rs.stream.color, 640, 480, rs.format.rgb8, 15)
+config.enable_stream(rs.stream.depth, 640, 480, rs.format.z16, 30)
+config.enable_stream(rs.stream.color, 640, 480, rs.format.rgb8, 30)
 
 # Start streaming
 profile = pipeline.start(config)
@@ -95,7 +98,7 @@ i = 0
 #                    [0., 0., 1.]])
 cam_K = np.loadtxt(os.path.join(args.object_dir, args.camera_calibration_file)).reshape(3,3)
 Estimating = True
-time.sleep(2)
+time.sleep(1)
 # Streaming loop
 try:
     
@@ -140,6 +143,8 @@ try:
         depth[(depth<0.1) | (depth>=np.inf)] = 0
         
         if i==0:
+            create_mask_new(color_image)
+            mask = cv2.imread("mask.png")
             if len(mask.shape)==3:
                 for c in range(3):
                     if mask[...,c].sum()>0:
@@ -160,14 +165,16 @@ try:
         else:
             pose = est.track_one(rgb=color, depth=depth, K=cam_K, iteration=args.track_refine_iter)
 
-        start_score_time = time.time()
-        pose_batch = np.expand_dims(pose, axis=0)
-        scores, _ = scorer.predict(rgb=color, depth=depth, K=cam_K, ob_in_cams=pose_batch,
-                                    mesh=mesh, glctx=glctx, mesh_diameter=mesh_diameter)
-        tracking_score = scores.cpu().item()
-        end_score_time = time.time()
-        # logging.info(f"Score prediction time: {end_score_time-start_score_time} s")
-        logging.info(f"Tracking score: {tracking_score}")
+        # get score
+        if args.calc_score:
+            start_score_time = time.time()
+            pose_batch = np.expand_dims(pose, axis=0)
+            scores, _ = scorer.predict(rgb=color, depth=depth, K=cam_K, ob_in_cams=pose_batch,
+                                        mesh=mesh, glctx=glctx, mesh_diameter=mesh_diameter)
+            tracking_score = scores.cpu().item()
+            end_score_time = time.time()
+            logging.info(f"Score prediction time: {end_score_time-start_score_time} s")
+            logging.info(f"Tracking score: {tracking_score}")
 
         end_time = time.time()
         logging.info(f"Inference time: {end_time-start_time} s")
@@ -182,8 +189,9 @@ try:
             inference_time = end_time - start_time
             cv2.putText(vis, f'Inference time: {inference_time:.3f}s', (10, 25),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-            cv2.putText(vis, f'Tracking score: {tracking_score:.4f}', (10, 40),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+            if args.calc_score:
+                cv2.putText(vis, f'Tracking score: {tracking_score:.4f}', (10, 40),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
             # cv2.putText(vis, f'Score time: {(end_score_time-start_score_time):.4f}', (10, 60),
             #             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
             

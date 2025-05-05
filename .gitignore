@@ -3,6 +3,7 @@ eigen-3.4.0
 mask.png
 out
 *.mp4
+librealsense_build
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
