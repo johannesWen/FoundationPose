@@ -47,7 +47,7 @@ sudo cp config/99-realsense-d4xx-mipi-dfu.rules /etc/udev/rules.d/
 sudo udevadm control --reload-rules && sudo udevadm trigger
 
 mkdir build && cd build
-cmake ../ -DFORCE_LIBUVC=true -DCMAKE_BUILD_TYPE=release -DBUILD_PYTHON_BINDINGS:bool=true
+cmake ../ -DFORCE_LIBUVC=true -DCMAKE_BUILD_TYPE=release -DBUILD_PYTHON_BINDINGS:bool=true -DBUILD_WITH_CUDA=true
 make -j2
 sudo make install
 
