@@ -60,5 +60,5 @@ cmake .. && \
 make -j$(nproc)
 
 # Install Cutie (FoundationPose++)
-cd ${PROJ_ROOT}/submodules/Cutie
+cd ${PROJ_ROOT}/submodules/FoundationPose/Cutie
 pip install -e .
