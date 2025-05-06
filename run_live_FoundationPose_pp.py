@@ -8,6 +8,8 @@ import time
 import logging
 logging.basicConfig(level=logging.WARNING)
 
+logger = logging.getLogger('FoundationPose_pp')
+
 from utils import timing_block
 from kalman_filter_6d import KalmanFilter6D
 from utils_foundationpose_pp import get_6d_pose_arr_from_mat, adjust_pose_to_image_point, get_pose_xy_from_image_point, get_mat_from_6d_pose_arr
@@ -23,27 +25,33 @@ code_dir = os.path.dirname(os.path.realpath(__file__))
 # parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'book.obj'))
 # parser.add_argument('--object_dir', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/cup2')
 # parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'Cup2.obj'))
-parser.add_argument('--object_dir', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/cup_keba')
-parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'cup_keba.obj'))
+# parser.add_argument('--object_dir', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/cup_keba')
+# parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'cup_keba.obj'))
 # parser.add_argument('--object_dir', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/bottle')
 # parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'keba_bottle.obj'))
 # parser.add_argument('--object_dir', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/rubiks_cube')
 # parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'rubiks_cube.obj'))
+# parser.add_argument('--object_dir', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/protein_creme')
+# # parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'creme.obj'))
+# parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'creme_low.obj'))
+parser.add_argument('--object_dir', type=str, default=f'/mnt/data/git/custom-object-tracker/submodules/FoundationPose/example_data/bottle_happyday')
+parser.add_argument('--mesh_file', type=str, default=os.path.join('mesh', 'bottle.obj'))
 
 parser.add_argument('--camera_calibration_file', type=str, default='cam_K.txt')
 parser.add_argument('--est_refine_iter', type=int, default=3)
 parser.add_argument('--track_refine_iter', type=int, default=2)
 parser.add_argument('--debug', type=int, default=1)
+parser.add_argument('--show_debug_window', type=bool, default=True)
 parser.add_argument('--calc_score', type=bool, default=False)
 parser.add_argument('--show_fps', type=bool, default=True)
 parser.add_argument('--debug_dir', type=str, default=f'{code_dir}/debug')
-parser.add_argument('--activate_kalman_filter', type=bool, default=False)
+parser.add_argument('--activate_kalman_filter', type=bool, default=True)
 parser.add_argument('--activate_2d_tracker', type=bool, default=True)
 parser.add_argument("--kf_measurement_noise_scale", type=float, default=0.05, help="The scale of measurement noise relative to prediction in kalman filter, greater value means more filtering. Only effective if activate_kalman_filter")
     
 args = parser.parse_args()
 
-set_logging_format()
+set_logging_format(logging.WARNING)
 set_seed(0)
 
 mesh = trimesh.load(os.path.join(args.object_dir, args.mesh_file), skip_materials=False, force='mesh')
@@ -51,7 +59,7 @@ mesh_diameter = compute_mesh_diameter(model_pts=mesh.vertices, n_sample=10000)
 
 debug = args.debug
 debug_dir = args.debug_dir
-os.system(f'rm -rf {debug_dir}/* && mkdir -p {debug_dir}/track_vis {debug_dir}/ob_in_cam')
+os.system(f'rm -rf {debug_dir}/* && mkdir -p {debug_dir}/track_vis {debug_dir}/ob_in_cam {debug_dir}/mask_visualization {debug_dir}/bbox_visualization')
 
 to_origin, extents = trimesh.bounds.oriented_bounds(mesh)
 bbox = np.stack([-extents/2, extents/2], axis=0).reshape(2,3)
@@ -59,7 +67,7 @@ scorer = ScorePredictor()
 refiner = PoseRefinePredictor()
 glctx = dr.RasterizeCudaContext()
 est = FoundationPose(model_pts=mesh.vertices, model_normals=mesh.vertex_normals, mesh=mesh, scorer=scorer, refiner=refiner, debug_dir=debug_dir, debug=debug, glctx=glctx)
-logging.info("estimator initialization done")
+logger.info("estimator initialization done")
 
 #create mask
 # create_mask()
@@ -128,7 +136,7 @@ else:
 # Streaming loop
 try:
     
-    os.makedirs(f'{debug_dir}/ob_in_cam', exist_ok=True)
+    # os.makedirs(f'{debug_dir}/ob_in_cam', exist_ok=True)
     end_time = 0
     while Estimating:
         start_time = time.time()
@@ -162,7 +170,7 @@ try:
             Estimating = False
             break   
         
-        # logging.debug(f'i:{i}')
+        # logger.debug(f'i:{i}')
         
         
         H, W = cv2.resize(color_image, (640,480)).shape[:2]
@@ -218,10 +226,17 @@ try:
                 #     os.makedirs(bbox_visualization_path, exist_ok=True)
                 #     bbox_visualization_color_filename = os.path.join(bbox_visualization_path, frame_color_filename)
                 if args.activate_2d_tracker:
+                    mask_visualization_color_filename = None
+                    bbox_visualization_color_filename = None
+                    if debug>=2:
+                        mask_visualization_color_filename = os.path.join(debug_dir, 'mask_visualization')
+                        bbox_visualization_color_filename = os.path.join(debug_dir, 'bbox_visualization')
+                        # os.makedirs(mask_visualization_color_filename, exist_ok=True)
+                        # os.makedirs(bbox_visualization_color_filename, exist_ok=True)
                     bbox_2d = tracker_2D.track(
                         color,
-                        # mask_visualization_path=mask_visualization_color_filename,
-                        # bbox_visualization_path=bbox_visualization_color_filename
+                        mask_visualization_path=os.path.join(mask_visualization_color_filename, f'{i}.png') if mask_visualization_color_filename is not None else None,
+                        bbox_visualization_path=os.path.join(bbox_visualization_color_filename, f'{i}.png') if bbox_visualization_color_filename is not None else None,
                     )
                 # TODO: get occluded mask
                 # adjusted_last_pose = adjust_pose_to_image_point(ob_in_cam=pose, K=cam_K, x=bbox_2d[0]+bbox_2d[2]/2, y=bbox_2d[1]+bbox_2d[3]/2)
@@ -248,42 +263,43 @@ try:
                                             mesh=mesh, glctx=glctx, mesh_diameter=mesh_diameter)
                 tracking_score = scores.cpu().item()
                 end_score_time = time.time()
-                logging.info(f"Score prediction time: {end_score_time-start_score_time} s")
-                logging.info(f"Tracking score: {tracking_score}")
+                logger.info(f"Score prediction time: {end_score_time-start_score_time} s")
+                logger.info(f"Tracking score: {tracking_score}")
 
         end_time = time.time()
-        logging.info(f"Inference time: {end_time-start_time} s")
-        logging.info(f"FPS: {1/(end_time-start_time)}")
+        logger.info(f"Inference time: {end_time-start_time} s")
+        logger.info(f"FPS: {1/(end_time-start_time)}")
 
         if debug==0:
             cv2.imshow('1', color_image)
             cv2.waitKey(1)
         
         if debug>=1:
-            center_pose = pose@np.linalg.inv(to_origin)
-            vis = draw_posed_3d_box(cam_K, img=color, ob_in_cam=center_pose, bbox=bbox)
-            vis = draw_xyz_axis(color, ob_in_cam=center_pose, scale=0.1, K=cam_K, thickness=3, transparency=0, is_input_rgb=True)
-            if args.show_fps:
-                fps = 1.0 / (end_time - start_time) if end_time - start_time > 0 else 0
-                cv2.putText(vis, f'FPS: {fps:.2f}', (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-            inference_time = end_time - start_time
-            cv2.putText(vis, f'Inference time: {inference_time:.3f}s', (10, 25),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
-            if args.calc_score:
-                cv2.putText(vis, f'Tracking score: {tracking_score:.4f}', (10, 40),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-            # cv2.putText(vis, f'Score time: {(end_score_time-start_score_time):.4f}', (10, 60),
-            #             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
-            
-            cv2.imshow('1', vis[...,::-1])
-            # cv2.waitKey(1)
-            if cv2.waitKey(1) == 27:
-                Estimating = False
-                break   
+            if args.show_debug_window:
+                center_pose = pose@np.linalg.inv(to_origin)
+                vis = draw_posed_3d_box(cam_K, img=color, ob_in_cam=center_pose, bbox=bbox)
+                vis = draw_xyz_axis(color, ob_in_cam=center_pose, scale=0.1, K=cam_K, thickness=3, transparency=0, is_input_rgb=True)
+                if args.show_fps:
+                    fps = 1.0 / (end_time - start_time) if end_time - start_time > 0 else 0
+                    cv2.putText(vis, f'FPS: {fps:.2f}', (10, 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+                inference_time = end_time - start_time
+                cv2.putText(vis, f'Inference time: {inference_time:.3f}s', (10, 25),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                if args.calc_score:
+                    cv2.putText(vis, f'Tracking score: {tracking_score:.4f}', (10, 40),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+                # cv2.putText(vis, f'Score time: {(end_score_time-start_score_time):.4f}', (10, 60),
+                #             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
+                
+                cv2.imshow('1', vis[...,::-1])
+                # cv2.waitKey(1)
+                if cv2.waitKey(1) == 27:
+                    Estimating = False
+                    break   
 
         if debug>=2:
             np.savetxt(f'{debug_dir}/ob_in_cam/{i}.txt', pose.reshape(4,4))
-            os.makedirs(f'{debug_dir}/track_vis', exist_ok=True)
+            # os.makedirs(f'{debug_dir}/track_vis', exist_ok=True)
             imageio.imwrite(f'{debug_dir}/track_vis/{i}.png', vis)
         
         i += 1
