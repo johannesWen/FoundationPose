@@ -10,7 +10,7 @@ import cv2
 from torchvision.transforms.functional import to_tensor
 from PIL import Image
 
-from utils import visualize_mask, visualize_bbox
+from utils_foundationpose_pp import visualize_mask, visualize_bbox
 
 proj_path = os.path.join(os.path.dirname(__file__), '..')
 cutie_path = os.path.join(proj_path, "Cutie")
