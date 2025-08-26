@@ -8,7 +8,6 @@ import time
 import logging
 logging.basicConfig(level=logging.WARNING)
 
-from utils import timing_block
 
 torch.backends.cudnn.enabled = True
 # torch.backends.cudnn.benchmark = True
