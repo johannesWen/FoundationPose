@@ -10,7 +10,6 @@ logging.basicConfig(level=logging.WARNING)
 
 logger = logging.getLogger('FoundationPose_pp')
 
-from utils import timing_block
 from kalman_filter_6d import KalmanFilter6D
 from utils_foundationpose_pp import get_6d_pose_arr_from_mat, adjust_pose_to_image_point, get_pose_xy_from_image_point, get_mat_from_6d_pose_arr
 from VOT import Cutie, Tracker_2D 
