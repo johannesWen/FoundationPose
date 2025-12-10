@@ -6,7 +6,7 @@ from pathlib import Path
 import os
 import time
 import logging
-logging.basicConfig(level=logging.WARNING)
+# logging.basicConfig(level=logging.WARNING)
 
 logger = logging.getLogger('FoundationPose_pp')
 
